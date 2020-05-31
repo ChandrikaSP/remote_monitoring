@@ -1,0 +1,255 @@
+{% extends "layout.html" %}
+{% block body %}
+
+<script src="{{ url_for('static', filename='datatables/js/jquery.dataTables.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='socket.io.slim.js') }}" type="text/javascript"></script>
+
+<script>
+    var user_id = 'admin';
+    $(document).ready(function() {
+        $('#error_message_container').hide();
+        $('#info_message_container').hide();
+        $('#btn_get_config').prop('disabled', true);
+        $('#expanded_entry_title').hide();
+        $('#expanded_entry').hide();
+        $('#main_config').hide();
+        $('#hw_config').hide();
+        $('#sw_config').hide();
+        robot_id = null;
+        main_config = null;
+        hw_config = null;
+        sw_config = null;
+
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/experiments/get_robot_ids',
+            type: 'get',
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            if (result.message != '')
+            {
+                $('#error_message_container').show();
+                $('#error_message_container_content').html(result.message);
+                return;
+            }
+
+            $.each(result.robots, function(i, robot_id){
+                $('#robot_ids').append($('<option>', {
+                    value: robot_id,
+                    text: robot_id
+                }));
+            });
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+        });
+
+        $('#robot_ids').change(function() {
+            robot_id = $(this).val();
+            if (robot_id != 'none') {
+                $('#btn_get_config').prop('disabled', false);
+            }
+            else {
+                $('#btn_get_config').prop('disabled', true);
+            }
+        });
+
+        $("#btn_get_config").click(function(){
+            $('#error_message_container').hide();
+            $('#info_message_container').hide();
+            $('#expanded_entry').html('');
+            $('#expanded_entry').show();
+            $('#expanded_entry_title').html('');
+            $('#expanded_entry_title').hide();
+            $('#main_config').hide();
+            $('#hw_config').hide();
+            $('#sw_config').hide();
+            $.ajax({
+                url: SCRIPT_ROOT + '/component_monitoring_config/get_config',
+                type: 'get',
+                data: { robot_id: robot_id},
+                contentType: 'application/json',
+                cache: false
+            }).done(function(result) {
+                if (result.message != '')
+                {
+                    $('#error_message_container').show();
+                    $('#error_message_container_content').html(result.message);
+                    return;
+                }
+
+                $('#info_message_container').show();
+                $('#info_message_container_content').html('Query request successfull');
+                $('#query_result').show();
+                <!-- $('#expanded_entry').html(JSON.stringify(result.config)); -->
+                <!-- document.getElementById('expanded_entry').appendChild(renderjson.set_icons('►', '▼').set_show_to_level(1)(result.response.config)); -->
+                update_table(result.response.config);
+                <!-- console.log(result.response.config); -->
+            }).fail(function(jqXHR, status, error) {
+                console.log(error);
+                $('#error_message_container').show();
+                $('#error_message_container_content').html('An unexpected error has occurred');
+            });
+        });
+
+        $('.query_table').on('click', 'button', function() {
+            $('#expanded_entry').html('');
+            id = $(this).val();
+            console.log(id);
+            $('#expanded_entry_title').html('<h3>' + id + '</h3>')
+            if (hw_config.hasOwnProperty(id)){
+                output = hw_config[id];
+            }
+            else if (sw_config.hasOwnProperty(id)){
+                output = sw_config[id];
+            }
+            else if (main_config.hasOwnProperty(id)){
+                output = main_config[id];
+            }
+            document.getElementById('expanded_entry').appendChild(renderjson.set_icons('►', '▼').set_show_to_level(1)(output));
+            $('#expanded_entry').show();
+            $('#expanded_entry_title').show();
+            $('#info_message_container').html("Details expanded at the bottom of the page.");
+        });
+    });
+
+    function update_table(data)
+    {
+        var keys = [];
+        for (key_name in data) {
+            keys.push(key_name);
+        }
+        console.log(keys);
+        if (keys.indexOf('hw_config') >= 0){
+            console.log('hardware component config');
+            hw_config = {};
+            for(var i = 0; i<data.hw_config.length; i++)
+            {
+                hw_config[data.hw_config[i].component_name] = data.hw_config[i];
+            }
+            $('#hw_config').show();
+            console.log(hw_config);
+            var hw_config_table = document.getElementById('hw_config');
+            $("#hw_config tr:not(:first)").remove();
+            populate_component_config_table(hw_config, hw_config_table);
+        }
+        if (keys.indexOf('sw_config') >= 0){
+            console.log('software component config');
+            sw_config = {};
+            for(var i = 0; i<data.sw_config.length; i++)
+            {
+                sw_config[data.sw_config[i].component_name] = data.sw_config[i];
+            }
+            $('#sw_config').show();
+            console.log(sw_config);
+            var sw_config_table = document.getElementById('sw_config');
+            $("#sw_config tr:not(:first)").remove();
+            populate_component_config_table(sw_config, sw_config_table);
+        }
+        if (keys.indexOf('main_config') >= 0){
+            console.log('main component config');
+            main_config = data.main_config;
+            $('#main_config').show();
+            console.log(data.main_config);
+            var main_config_table = document.getElementById('main_config');
+            $("#main_config tr:not(:first)").remove();
+            for (var key in main_config)
+            {
+                var row = main_config_table.insertRow(-1);
+
+                var config_key_cell = row.insertCell(-1);
+                config_key_cell.innerHTML = key;
+
+                var button = row.insertCell(-1);
+                button.innerHTML = '<td><button id="' + key +
+                    '" value="' + key +
+                    '" class="btn btn-primary" type="button" disabled="disabled">+</button></td>';
+                $('#' + key).prop('disabled', false);
+            }
+        }
+    }
+
+    function populate_component_config_table(data_obj, table_obj)
+    {
+        for (var component_name in data_obj)
+        {
+            var row = table_obj.insertRow(-1);
+
+            var component_name_cell = row.insertCell(-1);
+            component_name_cell.innerHTML = component_name;
+
+            var component_description_cell = row.insertCell(-1);
+            component_description_cell.innerHTML = data_obj[component_name].description;
+
+            var button = row.insertCell(-1);
+            button.innerHTML = '<td><button id="' + component_name +
+                '" value="' + component_name +
+                '" class="btn btn-primary" type="button" disabled="disabled">+</button></td>';
+            $('#' + component_name).prop('disabled', false);
+        }
+    }
+
+
+</script>
+
+
+<div class="row">
+    <div class="col-lg-12">
+        <h1 class="page-header">Component monitor configuration</h1>
+    </div>
+    <div class="col-lg-3">
+        <div class="form-group">
+            <select id="robot_ids" class="form-control">
+                <option value="none">Choose robot id</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div id="error_message_container" class="alert alert-danger alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="error_message_container_content"></p>
+</div>
+
+<div id="info_message_container" class="alert alert-info alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="info_message_container_content"></p>
+</div>
+
+<div class="row">
+</div>
+
+<button id="btn_get_config" class="btn btn-primary" type="button">Get Config</button>
+
+<div id="query_result" class="query_table" disabled="disabled">
+    <table id="main_config" width="100%" class="table table-striped table-bordered table-hover">
+        <thead>
+            <th width="90%">Config name</th>
+            <th width="10%">Detailed config</th>
+        </thead>
+        <tbody> </tbody>
+    </table>
+    <table id="hw_config" width="100%" class="table table-striped table-bordered table-hover">
+        <thead>
+            <th width="30%">Hardware component name</th>
+            <th width="60%">Hardware component description</th>
+            <th width="10%">Detailed config</th>
+        </thead>
+        <tbody> </tbody>
+    </table>
+    <table id="sw_config" width="100%" class="table table-striped table-bordered table-hover">
+        <thead>
+            <th width="30%">Software component name</th>
+            <th width="60%">Software component description</th>
+            <th width="10%">Detailed config</th>
+        </thead>
+        <tbody> </tbody>
+    </table>
+    <div id="expanded_entry_title"></div>
+    <div id="expanded_entry"></div>
+    <div class="panel panel-default"></div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,457 @@
+{% extends "layout.html" %}
+{% block body %}
+
+<script src="{{ url_for('static', filename='flot/jquery.flot.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='custom/js/plot.js') }}" type="text/javascript"></script>
+
+<script src="{{ url_for('static', filename='datatables/js/jquery.dataTables.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='socket.io.slim.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='d3/js/d3.min.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='custom/js/graph.js') }}" type="text/javascript"></script>
+
+
+<div class="row">
+    <div class="col-lg-12">
+        <h1 class="page-header">Remote experiments</h1>
+    </div>
+</div>
+
+<div id="error_message_container" class="alert alert-danger alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="error_message_container_content"></p>
+</div>
+
+<div id="info_message_container" class="alert alert-info alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="info_message_container_content"></p>
+</div>
+
+<div class="row">
+    <div class="col-lg-3">
+        <div class="form-group">
+            <select id="robot_ids" class="form-control">
+                <option value="none">Choose robot id</option>
+            </select>
+        </div>
+    </div>
+    <div class="col-lg-3">
+        <div class="form-group">
+            <select id="experiments" class="form-control">
+                <option value="none">Choose experiment</option>
+            </select>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <button id="btn_execute_experiment" disabled="disabled" class="btn btn-primary" type="button">Execute experiment</button>
+    </div>
+    <div class="col-lg-1">
+        <div id="operation_indicator" class="indicator"></div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-1">
+        <button id="btn_controller" disabled="disabled" class="btn btn-primary" type="button">Start Controller</button>
+    </div>
+    <div class="col-lg-2">
+        <button id="btn_reinit_pose" disabled="disabled" class="btn btn-primary" type="button">Re-init pose</button>
+    </div>
+    <div class="col-lg-2">
+        <button id="btn_rviz" disabled="disabled" class="btn btn-primary" type="button">Start RViz</button>
+    </div>
+    <div class="col-lg-3">
+        <button id="btn_nav" disabled="disabled" class="btn btn-primary" type="button">Pause Navigation</button>
+    </div>
+    <div class="col-lg-3">
+        <button id="btn_dock" disabled="disabled" class="btn btn-primary" type="button">Dock</button>
+    </div>
+</div>
+
+<div id="experiment_progress">
+    <div class="row">
+        <div class="col-lg-1">
+            <label>Robot ID:</label>
+        </div>
+        <div class="col-lg-2">
+            <label id="experiment_robot_id"></label>
+        </div>
+
+        <div class="col-lg-2">
+            <label>Ongoing experiment ID:</label>
+        </div>
+        <div class="col-lg-2">
+            <label id="ongoing_experiment_id"></label>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-12">
+            <textarea id="experiment_feedback" style="width=100%;" rows="2" cols="80"></textarea>
+        </div>
+    </div>
+
+</div>
+
+<div class="row">
+    <div id="graph"></div>
+</div>
+
+<div id="data_container">
+    <div class="col-lg-2">
+        <label>Wheel velocities</label>
+    </div>
+    <div class="col-lg-12">
+        <div id="vel_plot_placeholder" class="col-lg-10 data-plot"></div>
+        <div id="vel_plot_variable_selection" class="col-lg-2"></div>
+    </div>
+
+    <div class="col-lg-2">
+        <label>Acceleration</label>
+    </div>
+    <div class="col-lg-12">
+        <div id="accel_plot_placeholder" class="col-lg-10 data-plot"></div>
+        <div id="accel_plot_variable_selection" class="col-lg-2"></div>
+    </div>
+
+    <div class="col-lg-2">
+        <label>Gyro</label>
+    </div>
+    <div class="col-lg-12">
+        <div id="gyro_plot_placeholder" class="col-lg-10 data-plot"></div>
+        <div id="gyro_plot_variable_selection" class="col-lg-2"></div>
+    </div>
+</div>
+
+
+<script>
+    var robot_id = undefined;
+    var experiment = undefined;
+    var rviz_started = false;
+    var controller_started = false;
+    var navigation_paused = false;
+    var docked = false;
+    var vel_plot = new Plot('vel_plot_placeholder', 'vel_plot_variable_selection', 'plot_vel_variables', '', false);
+    var accel_plot = new Plot('accel_plot_placeholder', 'accel_plot_variable_selection', 'plot_accel_variables', '', false);
+    var gyro_plot = new Plot('gyro_plot_placeholder', 'gyro_plot_variable_selection', 'plot_gyro_variables', '', false);
+
+    var socket = io.connect('http://' + document.domain + ':' + location.port + '/experiments');
+
+    $(document).ready(function() {
+        $('#error_message_container').hide();
+        $('#info_message_container').hide();
+        $('#operation_indicator').show();
+        $('#btn_execute_experiment').prop('disabled', true);
+        $('#btn_reinit_pose').prop('disabled', true);
+        $('#btn_rviz').prop('disabled', true);
+        $('#btn_controller').prop('disabled', true);
+        $('#btn_nav').prop('disabled', true);
+        $('#experiment_progress').hide();
+        $('#data_container').hide();
+        $('#graph').hide();
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/experiments/get_robot_ids',
+            type: 'get',
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            if (result.message != '')
+            {
+                $('#error_message_container').show();
+                $('#error_message_container_content').html(result.message);
+                return;
+            }
+
+            $.each(result.robots, function(i, robot_id){
+                $('#robot_ids').append($('<option>', {
+                    value: robot_id,
+                    text: robot_id
+                }));
+            });
+            $('#operation_indicator').hide();
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+            $('#operation_indicator').hide();
+        });
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/experiments/get_experiment_list',
+            type: 'get',
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            if (result.message != '')
+            {
+                $('#error_message_container').show();
+                $('#error_message_container_content').html(result.message);
+                return;
+            }
+
+            $.each(result.experiments, function(i, experiment){
+                $('#experiments').append($('<option>', {
+                    value: experiment['id'],
+                    text: experiment['name']
+                }));
+            });
+            $('#operation_indicator').hide();
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+            $('#operation_indicator').hide();
+        });
+
+        $('#robot_ids').change(function() {
+            robot_id = $(this).val();
+            if (robot_id != 'none' && $('#experiments').val() != 'none') {
+                $('#btn_execute_experiment').prop('disabled', false);
+            }
+            else {
+                $('#btn_execute_experiment').prop('disabled', true);
+            }
+            if (robot_id != 'none') {
+                $('#btn_reinit_pose').prop('disabled', false);
+                $('#btn_rviz').prop('disabled', false);
+                $('#btn_controller').prop('disabled', false);
+                $('#btn_nav').prop('disabled', false);
+                $('#btn_dock').prop('disabled', false);
+            }
+            else {
+                $('#btn_reinit_pose').prop('disabled', true);
+                $('#btn_rviz').prop('disabled', true);
+                $('#btn_controller').prop('disabled', true);
+                $('#btn_nav').prop('disabled', true);
+                $('#btn_dock').prop('disabled', true);
+            }
+
+        });
+
+        $('#experiments').change(function() {
+            experiment = $(this).val();
+            if (experiment != 'none' && $('#robot_ids').val() != 'none') {
+                $('#btn_execute_experiment').prop('disabled', false);
+            }
+            else {
+                $('#btn_execute_experiment').prop('disabled', true);
+            }
+        });
+
+        $("#btn_execute_experiment").click(function(){
+            $.ajax({
+                url: SCRIPT_ROOT + '/experiments/send_experiment_request',
+                type: 'get',
+                data: { robot_id: robot_id, experiment: experiment },
+                contentType: 'application/json',
+                cache: false
+            }).done(function(result) {
+                if (result.message != '')
+                {
+                    $('#error_message_container').show();
+                    $('#error_message_container_content').html(result.message);
+                    return;
+                }
+
+                $('#info_message_container').show();
+                $('#info_message_container_content').html('Experiment request sent');
+                $('#experiment_robot_id').html(robot_id);
+                $('#ongoing_experiment_id').html(experiment);
+                $('#experiment_feedback').val('')
+                $('#experiment_progress').show();
+                $('#data_container').show();
+                vel_plot.reset();
+                accel_plot.reset();
+                gyro_plot.reset();
+            }).fail(function(jqXHR, status, error) {
+                console.log(error);
+                $('#error_message_container').show();
+                $('#error_message_container_content').html('An unexpected error has occurred');
+            });
+            $.ajax({
+                url: SCRIPT_ROOT + '/experiments/get_sm',
+                type: 'get',
+                data: { robot_id: robot_id},
+                contentType: 'application/json',
+                cache: false
+            }).done(function(result) {
+                if (result.message != '')
+                {
+                    $('#error_message_container').show();
+                    $('#error_message_container_content').html(result.message);
+                    return;
+                }
+
+                $('#graph').show();
+                console.log(result.transitions);
+                if (result.transitions != null){
+                    showForceGraph(result.transitions);
+                }
+            }).fail(function(jqXHR, status, error) {
+                console.log(error);
+                $('#error_message_container').show();
+                $('#error_message_container_content').html('An unexpected error has occurred');
+            });
+        });
+
+        $("#btn_reinit_pose").click(function(){
+            $.ajax({
+                url: SCRIPT_ROOT + '/experiments/remote_command',
+                type: 'get',
+                data: { robot_id: robot_id, command:'REINIT-POSE'},
+                contentType: 'application/json',
+                cache: false
+            })
+        });
+
+        $("#btn_rviz").click(function(){
+            var command_txt = 'START-RVIZ';
+            if (rviz_started == true) {
+                command_txt = 'STOP-RVIZ'
+                rviz_started = false;
+                $("#btn_rviz").text('Start RViz');
+            }
+            else {
+                rviz_started = true;
+                $("#btn_rviz").text('Stop RViz');
+            }
+            $.ajax({
+                url: SCRIPT_ROOT + '/experiments/remote_command',
+                type: 'get',
+                data: { robot_id: robot_id, command:command_txt},
+                contentType: 'application/json',
+                cache: false
+            })
+        });
+
+        $("#btn_controller").click(function(){
+            var command_txt = 'START-CONTROLLER';
+            if (controller_started == true) {
+                command_txt = 'STOP-CONTROLLER'
+                controller_started = false;
+                $("#btn_controller").text('Start Controller');
+            }
+            else {
+                controller_started = true;
+                $("#btn_controller").text('Stop Controller');
+            }
+            $.ajax({
+                url: SCRIPT_ROOT + '/experiments/remote_command',
+                type: 'get',
+                data: { robot_id: robot_id, command:command_txt},
+                contentType: 'application/json',
+                cache: false
+            })
+        });
+
+        $("#btn_nav").click(function(){
+            var command_txt = 'PAUSE-NAVIGATION';
+            if (navigation_paused == true) {
+                command_txt = 'UNPAUSE-NAVIGATION'
+                navigation_paused = false;
+                $("#btn_nav").text('Pause Navigation');
+            }
+            else {
+                navigation_paused = true;
+                $("#btn_nav").text('Unpause Navigation');
+            }
+            $.ajax({
+                url: SCRIPT_ROOT + '/experiments/remote_command',
+                type: 'get',
+                data: { robot_id: robot_id, command:command_txt},
+                contentType: 'application/json',
+                cache: false
+            })
+        });
+
+        $("#btn_dock").click(function(){
+            var command_txt = 'DOCK';
+            if (docked == true) {
+                command_txt = 'UNDOCK'
+                docked = false;
+                $("#btn_dock").text('Dock');
+            }
+            else {
+                docked = true;
+                $("#btn_dock").text('Undock');
+            }
+            $.ajax({
+                url: SCRIPT_ROOT + '/experiments/remote_command',
+                type: 'get',
+                data: { robot_id: robot_id, command:command_txt},
+                contentType: 'application/json',
+                cache: false
+            })
+        });
+
+        $(document).on('change', '.plot_vel_variables', function() {
+            vel_plot.display_selected_data();
+        });
+
+        $(document).on('change', '.plot_accel_variables', function() {
+            accel_plot.display_selected_data();
+        });
+
+        $(document).on('change', '.plot_gyro_variables', function() {
+            gyro_plot.display_selected_data();
+        });
+    });
+
+    socket.on('experiment_feedback', function(msg) {
+        var feedback_data = JSON.parse(msg);
+        var feedback_str = $('#experiment_feedback').val();
+        <!-- var feedback_str = ''; -->
+
+        if (feedback_data['feedback_type'] == 'ROBOT-COMMAND-FEEDBACK') {
+            feedback_str += 'Timestamp: ' + timestampToDate(feedback_data['timestamp'])  + ' --- ';
+            feedback_str += 'State: ' + feedback_data['command'] + ' --- ';
+            feedback_str += 'Status: ' + feedback_data['state'] + '\n';
+            updateCurrent(feedback_data['command']);
+        }
+        else if (feedback_data['feedback_type'] == 'ROBOT-EXPERIMENT-FEEDBACK') {
+            feedback_str += 'Timestamp: ' + timestampToDate(feedback_data['timestamp'])  + ' --- ';
+            feedback_str += 'Experiment result: ' + feedback_data['result'];
+            if (feedback_data['result'] == 'FINISHED'){
+                updateCurrent('DONE');
+            } else if (feedback_data['result'] == 'FAILED'){
+                updateCurrent('FAILED');
+            }
+        }
+        else if (feedback_data['feedback_type'] == 'EXPERIMENT-ERROR') {
+            $('#error_message_container').show();
+            $('#error_message_container_content').html(feedback_data['result']);
+        }
+        $('#experiment_feedback').val(feedback_str);
+        var bottom_height = $('#experiment_feedback').prop('scrollHeight') - $('#experiment_feedback').height();
+        $('#experiment_feedback').scrollTop(bottom_height);
+    });
+
+    socket.on('vel_data', function(msg) {
+        var data_msg = JSON.parse(msg);
+        vel_plot.display_data(data_msg['variables'], data_msg['data']);
+    });
+
+    socket.on('accel_data', function(msg) {
+        var data_msg = JSON.parse(msg);
+        accel_plot.display_data(data_msg['variables'], data_msg['data']);
+    });
+
+    socket.on('gyro_data', function(msg) {
+        var data_msg = JSON.parse(msg);
+        gyro_plot.display_data(data_msg['variables'], data_msg['data']);
+    });
+
+    // Function taken from https://stackoverflow.com/questions/847185/convert-a-unix-timestamp-to-time-in-javascript
+    function timestampToDate(timestamp) {
+        var date = new Date(timestamp*1000);
+        var hours = date.getHours();
+        var minutes = "0" + date.getMinutes();
+        var seconds = "0" + date.getSeconds();
+        var milliseconds = "0" + date.getMilliseconds();
+        var formatted_time = hours + ':' + minutes.substr(-2) + ':' + seconds.substr(-2) + '.' + milliseconds.substr(-3);
+        return formatted_time;
+    }
+
+</script>
+
+{% endblock %}

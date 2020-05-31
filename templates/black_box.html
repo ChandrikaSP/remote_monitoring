@@ -1,0 +1,497 @@
+{% extends "layout.html" %}
+{% block body %}
+
+<script src="{{ url_for('static', filename='flot/jquery.flot.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='custom/js/plot.js') }}" type="text/javascript"></script>
+
+<link href="css/index.css" rel="stylesheet"/>
+<link href="{{ url_for('static', filename='jquery.datetimepicker.min.css') }}" rel="stylesheet">
+<script src="{{ url_for('static', filename='jquery.datetimepicker.full.js') }}"></script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+}
+
+/* Create two equal columns that float next to each other */
+.column {
+    float: left;
+    width: 25%;
+    padding: 10px;
+}
+
+/* Clear floats after the columns */
+.row:after {
+    content: "";
+    display: table;
+    clear: both;
+}
+</style>
+
+<script>
+    var robot_variables = [];
+    var robot_id = undefined;
+
+    var plot = new Plot('plot_placeholder', 'plot_variable_selection', 'plot_variables', '/black_box/get_robot_data', true);
+
+    $(document).ready(function() {
+        $('#data_container').hide();
+
+        $('#start_date').datetimepicker({
+            validateOnBlur:false
+        });
+        $('#start_date').val("Start date");
+
+        $('#end_date').datetimepicker({
+            validateOnBlur:false
+        });
+        $('#end_date').val("End date");
+
+        $('#btn_display_data').prop('disabled', true);
+        $('#download_btn_form').prop('disabled', true);
+
+        $('#error_message_container').hide();
+        $('#info_message_container').hide();
+        $('#operation_indicator').show();
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/black_box/get_robot_ids',
+            type: 'get',
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            if (result.message != '')
+            {
+                $('#error_message_container').show();
+                $('#error_message_container_content').html(result.message);
+                return;
+            }
+
+            $.each(result.robots, function(i, robot_id){
+                $('#robot_ids').append($('<option>', {
+                    value: robot_id,
+                    text: robot_id
+                }));
+            });
+            $('#operation_indicator').hide();
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+            $('#operation_indicator').hide();
+        });
+
+        $('#robot_ids').change(function() {
+            if ($(this).val() == "none")
+            {
+                $('#btn_display_data').prop('disabled', true);
+                $('#download_btn_form').prop('disabled', true);
+
+                $('#variable_container').html('');
+                $('#data_container').hide();
+                plot.reset();
+                return;
+            }
+
+            robot_id = $(this).val();
+            $.ajax({
+                url: SCRIPT_ROOT + '/black_box/get_robot_variables',
+                type: 'get',
+                data: { robot_id: robot_id },
+                contentType: 'application/json',
+                cache: false
+            }).done(function(result) {
+                if (result.message != '')
+                {
+                    $('#error_message_container').show();
+                    $('#error_message_container_content').html(result.message);
+                    return;
+                }
+
+                $('#variable_container').html('');
+                $('#variable_container').prop('disabled', false);
+
+                robot_variables = result.robot_variables;
+                var html_string = visualise_variable_names(robot_variables);
+                $('#variable_container').html(html_string);
+            }).fail(function(jqXHR, status, error) {
+                console.log(error);
+                $('#error_message_container').show();
+                $('#error_message_container_content').html('An unexpected error has occurred');
+            });
+
+            if ( ($('#start_date').val() != "Start date") && ($('#end_date').val() != "End date") ) {
+                $('#btn_display_data').prop('disabled', false);
+                $('#download_btn_form').prop('disabled', false);
+
+            }
+            $('#data_container').show();
+            plot.reset();
+        });
+
+        $('#start_date').change(function() {
+            var start_date = $(this).val();
+            var end_date = $('#end_date').val();
+
+            if (start_date == '')
+            {
+                $(this).val('Start date');
+                $('#btn_display_data').prop('disabled', true);
+                $('#download_btn_form').prop('disabled', true);
+
+            }
+            else
+            {
+                if (end_date != 'End date' && $('#robot_ids').val() != 'none')
+                {
+                    $('#btn_display_data').prop('disabled', false);
+                    $('#download_btn_form').prop('disabled', false);
+
+                }
+            }
+        });
+
+        $('#end_date').change(function() {
+            var end_date = $(this).val();
+            var start_date = $('#start_date').val();
+
+            if (end_date == '')
+            {
+                $(this).val('End date');
+                $('#btn_display_data').prop('disabled', true);
+                $('#download_btn_form').prop('disabled', true);
+
+            }
+            else
+            {
+                if (start_date != 'Start date' && $('#robot_ids').val() != 'none')
+                {
+                    $('#btn_display_data').prop('disabled', false);
+                    $('#download_btn_form').prop('disabled', false);
+
+                }
+            }
+        });
+
+        $('#btn_display_data').click(function() {
+            var variable_list = [];
+            $.each($("input[name='variable']:checked"), function(){
+                if ($(this).closest('div').find('div').length == 0)
+                {
+                    variable_list.push($(this).val());
+                }
+            });
+
+            // check if the user selected a variable or not
+            if (variable_list.length == 0)
+            {
+                $('#info_message_container').show();
+                $('#info_message_container_content').html('Please select at least one variable');
+                return;
+            }
+
+            var start_time = $('#start_date').val();
+            var end_time = $('#end_date').val();
+
+            if ((start_time == 'Start date') && (end_time == 'End date') )
+            {
+                $('#info_message_container').show();
+                $('#info_message_container_content').html('Please select a start and an end time');
+                return;
+            }
+            else if (start_time == 'Start date')
+            {
+                $('#info_message_container').show();
+                $('#info_message_container_content').html('Please select a start date');
+                return;
+            }
+            else if (end_time == 'End date')
+            {
+                $('#info_message_container').show();
+                $('#info_message_container_content').html('Please select an end date');
+                return;
+            }
+
+            plot.reset();
+            plot_data(variable_list, 'start_date', 'end_date');
+        });
+
+        $(document).on('change', '.plot_variables', function() {
+            plot.display_selected_data();
+        });
+
+        $(document).on('click', '.variable_checkbox', function() {
+            if ($(this).is(':checked'))
+            {
+                $(this).closest('div').find(':checkbox').each(function() {
+                    $(this).prop('checked', true);
+                });
+            }
+            else
+            {
+                $(this).closest('div').find(':checkbox').each(function() {
+                    $(this).prop('checked', false);
+                });
+            }
+        });
+
+        $(document).on('click', '.glyphicon-plus', function() {
+            $.each($(this).closest('div').children('div'), function() {
+                $(this).collapse('toggle');
+            });
+        });
+    });
+
+    function visualise_variable_names(variables, html_string='', level=0, parent_variable_name='', variable_count=0)
+    {
+        if (Object.keys(variables).length == 0)
+        {
+            html_string += '</div>';
+            return html_string;
+        }
+
+        for (var variable in variables)
+        {
+            // we only allow 10 top-level variables per column
+            if ( (variable_count % 10) == 0)
+            {
+                if (variable_count != 0)
+                {
+                    html_string += '</div>';
+                }
+                html_string += '<div class="column">';
+            }
+
+            if (level == 0)
+            {
+                variable_count += 1;
+            }
+
+            var full_variable_name = '';
+            if (parent_variable_name == '')
+            {
+                full_variable_name = variable;
+            }
+            else
+            {
+                full_variable_name = parent_variable_name + '/' + variable;
+            }
+
+            // if this is the last level of variables, we add a collapsible panel
+            if (Object.keys(variables[variable]).length == 0)
+            {
+                html_string += '<div id="' + full_variable_name + '" class="checkbox panel-collapse collapse">';
+            }
+            // if there are additional variable levels, we only add a checkbox panel
+            // for the first level and additionally make the panel collapsible for the levels below
+            else
+            {
+                if (level == 0)
+                {
+                    html_string += '<div id="' + full_variable_name + '" class="checkbox">';
+                }
+                else
+                {
+                    html_string += '<div id="' + full_variable_name + '" class="checkbox panel-collapse collapse">';
+                }
+            }
+
+            // we add some spacing for better nested variable display
+            for (var i=0; i<level; i++)
+            {
+                html_string += '&nbsp;&nbsp;&nbsp;&nbsp;';
+            }
+
+            // if there are additional variable levels, we add a button
+            // for collapsing/uncollapsing the variable level below
+            if (Object.keys(variables[variable]).length != 0)
+            {
+                html_string += '<a href="#"><span class="glyphicon glyphicon-plus"></span></a>&nbsp;&nbsp;';
+            }
+            // if there's no variable level below, we simply add some additional
+            // space for better display of the variables on the last level
+            else
+            {
+                html_string += '&nbsp;&nbsp;&nbsp;&nbsp;';
+            }
+
+            // we finally add a checkbox for the variable
+            html_string += '<label><input class="variable_checkbox" type="checkbox" value="' + full_variable_name + '" name="variable" />' + variable + '</label>';
+
+            // the function is called recursively for displaying the next level of variables
+            html_string = visualise_variable_names(variables[variable], html_string, level+1, full_variable_name, variable_count);
+        }
+        html_string += '</div>';
+        return html_string;
+    }
+
+    function plot_data(variable_list, start_date, end_date)
+    {
+        var start_time_ms = date_str_to_timestamp(start_date);
+        var end_time_ms = date_str_to_timestamp(end_date);
+
+        $('#operation_indicator').show();
+        plot.get_data(robot_id, variable_list, start_time_ms, end_time_ms);
+    }
+
+    function reset_data_panel()
+    {
+        $('#variables').val('none');
+        $('#start_date').val('Start date');
+        $('#end_date').val('End date');
+        $('#btn_display_data').prop('disabled', true);
+        $('#download_btn_form').prop('disabled', true);
+
+        $('#operation_indicator').hide();
+        plot.reset();
+    }
+
+    function date_str_to_timestamp(date_str)
+    {
+        if (date_str == 'start_date')
+        {
+            var time = new Date($('#start_date').val());
+        }
+        else
+        {
+            var time = new Date($('#end_date').val());
+        }
+
+        var local_time = new Date(time.setTime(time.getTime() - (time.getTimezoneOffset() * 60000)));
+
+        var time_s = local_time.getTime() / 1000.;
+        return time_s;
+    }
+
+    function form_download_function()
+    {
+        var variable_list = [];
+        $.each($("input[name='variable']:checked"), function(){
+            if ($(this).closest('div').find('div').length == 0)
+            {
+                variable_list.push($(this).val());
+            }
+        });
+
+        // check if the user selected a variable or not
+        if (variable_list.length == 0)
+        {
+            $('#info_message_container').show();
+            $('#info_message_container_content').html('Please select at least one variable');
+            return;
+        }
+
+        var start_time = $('#start_date').val();
+        var end_time = $('#end_date').val();
+
+        if ((start_time == 'Start date') && (end_time == 'End date') )
+        {
+            $('#info_message_container').show();
+            $('#info_message_container_content').html('Please select a start and an end time');
+            return;
+        }
+        else if (start_time == 'Start date')
+        {
+            $('#info_message_container').show();
+            $('#info_message_container_content').html('Please select a start date');
+            return;
+        }
+        else if (end_time == 'End date')
+        {
+            $('#info_message_container').show();
+            $('#info_message_container_content').html('Please select an end date');
+            return;
+        }
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/black_box/get_download_query',
+            type: 'get',
+            data: { robot_id: robot_id,
+                    start_timestamp: date_str_to_timestamp('start_date'),
+                    end_timestamp: date_str_to_timestamp('end_date'),
+                    variables: variable_list.join()
+             },
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            console.log("Data received and stored successfully");
+            document.getElementById("download_form").submit();  //sending the stored data file to the client
+
+            $('#info_message_container').show();
+            $('#info_message_container_content').html('Data downloaded successfully');
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+        });
+    }
+</script>
+
+<div class="row">
+    <div class="col-lg-12">
+        <h1 class="page-header">Black box interface</h1>
+    </div>
+</div>
+
+<div id="error_message_container" class="alert alert-danger alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="error_message_container_content"></p>
+</div>
+
+<div id="info_message_container" class="alert alert-info alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="info_message_container_content"></p>
+</div>
+
+<div id="robot_selection_container">
+    <div class="row">
+        <div class="col-lg-2">
+            <div class="form-group">
+                <select id="robot_ids" class="form-control">
+                    <option value="none">Choose robot id</option>
+                </select>
+            </div>
+        </div>
+        <div class="col-lg-2">
+            <div class="form-group"><input id="start_date" type="text" class="form-control" value="End date"></div>
+        </div>
+        <div class="col-lg-2">
+            <div class="form-group"><input id="end_date" type="text" class="form-control" value="End date"></div>
+        </div>
+
+        <div class="col-lg-2">
+            <div class="form-group"><button id="btn_display_data" class="btn btn-primary" type="button">Display data</button></div>
+        </div>
+
+        <div class="col-lg-2">
+            <div class="form-group">
+                <form id="download_form" action="/black_box/send_download_file">
+                    <input id="download_btn_form" class="btn btn-primary" type="button" name="download_btn_form" onclick="form_download_function()" value="Download data">
+                </form>
+            </div>
+        </div>
+
+        <div class="col-lg-1">
+            <div id="operation_indicator" class="indicator"></div>
+        </div>
+    </div>
+</div>
+
+<div id="variable_container" disabled="disabled">
+    <div class="panel panel-default">
+
+    </div>
+</div>
+
+<div id="data_container">
+    <div class="col-lg-12">
+        <div id="plot_placeholder" class="col-lg-10 data-plot"></div>
+        <div id="plot_variable_selection" class="col-lg-2"></div>
+    </div>
+</div>
+
+{% endblock %}

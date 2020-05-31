@@ -1,0 +1,8 @@
+PyYAML>=4.2b1
+pyzmq==17.1.2
+python-dateutil
+pymongo
+git+https://github.com/ropod-project/pyre.git
+git+https://github.com/ropod-project/zyre_base.git
+inflection
+python-dateutil

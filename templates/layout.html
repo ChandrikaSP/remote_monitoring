@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ROPOD</title>
+    <link rel="shortcut icon" type="image/ico" href="{{ url_for('static', filename='images/favicon.ico') }}" />
+    <link href="{{ url_for('static', filename='custom/css/style.css') }}" rel="stylesheet" type="text/css" />
+    <link href="{{ url_for('static', filename='jquery-ui.css') }}" rel="stylesheet" type="text/css" />
+    <link href="{{ url_for('static', filename='jquery-ui.structure.css') }}" rel="stylesheet" type="text/css" />
+    <link href="{{ url_for('static', filename='jquery-ui.theme.css') }}" rel="stylesheet" type="text/css" />
+    <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='metisMenu/css/metisMenu.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='sb-admin-2.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='renderjson/renderjson.css') }}" rel="stylesheet">
+
+    <script src="{{ url_for('static', filename='jquery-1.11.2.min.js') }}" type="text/javascript"></script>
+    <script src="{{ url_for('static', filename='jquery-ui.js') }}" type="text/javascript"></script>
+    <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.min.js') }}" type="text/javascript"></script>
+    <script src="{{ url_for('static', filename='metisMenu/js/metisMenu.min.js') }}" type="text/javascript"></script>
+    <script src="{{ url_for('static', filename='sb-admin-2.min.js') }}" type="text/javascript"></script>
+    <script src="{{ url_for('static', filename='renderjson/renderjson.js') }}" type="text/javascript"></script>
+    <script src="{{ url_for('static', filename='d3/js/d3.min.js') }}" type="text/javascript"></script>
+
+    <script type=text/javascript>
+      var SCRIPT_ROOT = {{ request.script_root|tojson|safe }};
+    </script>
+</head>
+
+<body>
+    <div id="wrapper">
+        <nav class="navbar navbar-default navbar-static-top" role="navigation" style="margin-bottom: 0">
+            <div class="navbar-default sidebar" role="navigation">
+                <div class="sidebar-nav navbar-collapse">
+                    <ul class="nav" id="side-menu">
+                        <li>
+                            <a href="#"><i class="fa fa-bar-chart-o fa-fw"></i>Monitoring</a>
+                        </li>
+                        <ul class="nav">
+                        <li>
+                            <a href="/"><i class="fa fa-bar-chart-o fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Robot Status</a>
+                        </li>
+                        <li>
+                            <a href="/black_box"><i class="fa fa-dashboard fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Black Box Interface</a>
+                        </li>
+                        <li>
+                            <a href="/real_time_monitoring"><i class="fa fa-dashboard fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Real-Time Monitoring</a>
+                        </li>
+                        <li>
+                            <a href="/experiments"><i class="fa fa-bar-chart-o fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Remote Experiments</a>
+                        </li>
+                        <li>
+                            <a href="/component_monitoring_config"><i class="fa fa-dashboard fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Component Monitor Config</a>
+                        </li>
+			<li>
+                            <a href="/component_management"><i class="fa fa-dashboard fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Component Management</a>
+                        </li>
+                    </ul>
+                        <li>
+                            <a href="#"><i class="fa fa-bar-chart-o fa-fw"></i>Fleet Management</a>
+                        </li>
+                        <ul class="nav">
+                        <li>
+                            <a href="/central_operator_console"><i class="fa fa-dashboard fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Central Operator Console</a>
+                        </li>
+                        <li>
+                            <a href="/schedule_task"><i class="fa fa-dashboard fa-fw"></i>&nbsp;&nbsp;&nbsp;&nbsp;Schedule Task</a>
+                        </li>
+                    </ul>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper">
+            {% block body %}{% endblock %}
+        </div>
+    </div>
+</body>
+</html>

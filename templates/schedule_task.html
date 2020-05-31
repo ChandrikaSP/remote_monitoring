@@ -1,0 +1,262 @@
+{% extends "layout.html" %}
+{% block body %}
+
+<script src="{{ url_for('static', filename='jquery-1.11.2.min.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='datatables/js/jquery.dataTables.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='socket.io.slim.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='plotly-latest.min.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='custom/js/plot.js') }}" type="text/javascript"></script>
+
+
+<script>
+    var user_id = 'admin';
+    $(document).ready(function() {
+        $('#error_message_container').hide();
+        $('#info_message_container').hide();
+        $('#operation_indicator').show();
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/task/get_locations',
+            type: 'get',
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            if (result.message != '')
+            {
+                $('#error_message_container').show();
+                $('#error_message_container_content').html(result.message);
+                return;
+            }
+
+            $.each(result.locations, function(i, location){
+                $('#pickup_locations').append($('<option>', {
+                    value: location['id'],
+                    text: location['name']
+                }));
+
+                $('#delivery_locations').append($('<option>', {
+                    value: location['id'],
+                    text: location['name']
+                }));
+            });
+            $('#operation_indicator').hide();
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+            $('#operation_indicator').hide();
+        });
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/task/get_device_types',
+            type: 'get',
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            if (result.message != '')
+            {
+                $('#error_message_container').show();
+                $('#error_message_container_content').html(result.message);
+                return;
+            }
+
+            $.each(result.device_types, function(i, device){
+                $('#device_types').append($('<option>', {
+                    value: device['id'],
+                    text: device['name']
+                }));
+            });
+            $('#operation_indicator').hide();
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+            $('#operation_indicator').hide();
+        });
+
+        $("#btn_schedule_task").click(function(){
+            var pickup_location = $('#pickup_locations').val();
+            var delivery_location = $('#delivery_locations').val();
+            var pickup_location_level = $('#pickup_location_levels').val();
+            var delivery_location_level = $('#delivery_location_levels').val();
+            var device_type = $('#device_types').val();
+
+            $.ajax({
+                url: SCRIPT_ROOT + '/task/send_task_request',
+                type: 'post',
+                data: JSON.stringify({
+                          user_id: user_id,
+                          pickup_location: pickup_location,
+                          delivery_location: delivery_location,
+                          pickup_location_level: pickup_location_level,
+                          delivery_location_level: delivery_location_level,
+                          device_type: device_type
+                      }),
+                contentType: 'application/json',
+                cache: false
+            }).done(function(result) {
+                if (result.message != '')
+                {
+                    $('#error_message_container').show();
+                    $('#error_message_container_content').html(result.message);
+                    return;
+                }
+
+                $('#info_message_container').show();
+                $('#info_message_container_content').html('Task request sent');
+            }).fail(function(jqXHR, status, error) {
+                console.log(error);
+                $('#error_message_container').show();
+                $('#error_message_container_content').html('An unexpected error has occurred');
+            });
+        });
+
+        $.ajax({
+            url: SCRIPT_ROOT + '/task/get_maps',
+            type: 'get',
+            contentType: 'application/json',
+            cache: false
+        }).done(function(result) {
+            if (result.message != '')
+            {
+                $('#error_message_container').show();
+                $('#error_message_container_content').html(result.message);
+                return;
+            }
+
+            $.each(result.maps, function(i, map){
+                $('#map_name').append($('<option>', {
+                    value: map.name,
+                    text: map.name
+                }));
+            });
+            maps = {};
+            for (i=0; i<result.maps.length; i++){
+                maps[result.maps[i].name] = result.maps[i];
+            }
+            console.log(maps);
+        }).fail(function(jqXHR, status, error) {
+            console.log(error);
+            $('#error_message_container').show();
+            $('#error_message_container_content').html('An unexpected error has occurred');
+        });
+
+        $('#map_name').change(function() {
+            map_name = $(this).val();
+            showOccGrid(maps[map_name], Plotly.update);
+        });
+    });
+
+    var socket = io.connect('http://' + document.domain + ':' + location.port + '/task_scheduling');
+    var map_res = 0.02
+    socket.on('connect', function(msg) {
+    });
+
+    socket.on('map', function(msg) {
+        showOccGrid(msg, Plotly.plot);
+    });
+
+    function showOccGrid(msg, plot_function){
+        sendOccupancyGrid(msg, plot_function);
+        map_res = msg['resolution'];
+    }
+
+    socket.on('robot_pose', function(msg) {
+        plotRobotPoses(msg, map_res);
+    });
+
+
+</script>
+
+
+<div class="row">
+    <div class="col-lg-12">
+        <h1 class="page-header">Schedule task</h1>
+    </div>
+</div>
+
+<div id="error_message_container" class="alert alert-danger alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="error_message_container_content"></p>
+</div>
+
+<div id="info_message_container" class="alert alert-info alert-dismissible">
+    <a href="#" class="close" onclick="$('.alert').hide()">&times;</a>
+    <p id="info_message_container_content"></p>
+</div>
+
+<div class="row">
+    <div class="col-lg-2">
+        <div class="form-group">
+            <select id="pickup_locations" class="form-control">
+                <option value="none">Choose pickup location</option>
+            </select>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="form-group">
+            <select id="pickup_location_levels" class="form-control">
+                <option value="none">Choose pickup floor</option>
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+            </select>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="form-group">
+            <select id="delivery_locations" class="form-control">
+                <option value="none">Choose drop off location</option>
+            </select>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="form-group">
+            <select id="delivery_location_levels" class="form-control">
+                <option value="none">Choose drop off floor</option>
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+            </select>
+        </div>
+    </div>
+    <div class="col-lg-2">
+        <div class="form-group">
+            <select id="device_types" class="form-control">
+                <option value="none">Choose device type</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="col-lg-1">
+        <div id="operation_indicator" class="indicator"></div>
+    </div>
+</div>
+
+<button id="btn_schedule_task" class="btn btn-primary" type="button">Schedule task</button>
+
+<div class="row">
+    <div class="col-lg-2">
+        <div class="form-group">
+            <select id="map_name" class="form-control">
+                <option value="none">Choose map name</option>
+            </select>
+        </div>
+    </div>
+</div>
+<div id="occupancy_grid"></div>
+
+
+{% endblock %}

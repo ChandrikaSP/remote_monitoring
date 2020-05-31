@@ -1,0 +1,41 @@
+.data-plot
+{
+    height: 400px;
+}
+
+.indicator
+{
+    width: 16px;
+    height: 16px;
+    background-image: url("../images/indicator.gif");
+}
+
+.green_dot
+{
+    height: 15px;
+    width: 15px;
+    background-color: rgb(0, 255, 0);
+    border-radius: 50%;
+    display: inline-block;
+}
+.red_dot
+{
+    height: 15px;
+    width: 15px;
+    background-color: rgb(255, 0, 0);
+    border-radius: 50%;
+    display: inline-block;
+}
+.grey_dot
+{
+    height: 15px;
+    width: 15px;
+    background-color: rgb(128, 128, 128);
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.toggle
+{
+    display: none;
+}
